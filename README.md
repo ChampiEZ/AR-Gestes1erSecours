@@ -1,3 +1,5 @@
+# Fait par AMMAR Adam & ABBAS Ali
+
 # AR-01 · Premiers Secours
 
 Application web éducative qui apprend les **gestes de premiers secours** à travers des mini-jeux en réalité augmentée (webcam + détection de mains).
