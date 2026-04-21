@@ -27,6 +27,8 @@ La progression est sauvegardée localement (localStorage). Aucune donnée n'est 
 
 ## Lancer le projet
 
+Le projet a été déplacé en ligne (Vercel) : https://ar-gestes1er-secours.vercel.app/
+
 Le projet tourne entièrement côté client mais **doit être servi via HTTP** (pas en `file://`) à cause des restrictions d'accès à la webcam.
 
 ### Option 1 — avec VS Code Live Server
