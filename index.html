@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AR-01 · Premiers Secours</title>
+  <link rel="stylesheet" href="landing.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- AR Layer — camera + landmarks, shown only during game phases -->
+  <div id="ar-layer" class="hidden">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="ar-canvas"></canvas>
+  </div>
+
+  <!-- ══ LANDING ══════════════════════════════════════════════════════════ -->
+  <div id="screen-landing" class="screen active">
+    <canvas id="bg-canvas"></canvas>
+    <div class="corner corner--tl"></div>
+    <div class="corner corner--tr"></div>
+    <div class="corner corner--bl"></div>
+    <div class="corner corner--br"></div>
+    <div class="badge">MISSION 001 · PREMIERS SECOURS</div>
+    <main class="hero">
+      <div class="hero__eyebrow">SYSTÈME ACTIF</div>
+      <h1 class="hero__title">
+        <span class="hero__title-line">SAUVE</span>
+        <span class="hero__title-line accent">UNE VIE</span>
+      </h1>
+      <p class="hero__promise">Apprends à sauver une vie en jouant</p>
+      <div class="webcam-notice">
+        <svg class="webcam-notice__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="3.5"/>
+          <path d="M6.5 6.5h-2A1.5 1.5 0 003 8v9a1.5 1.5 0 001.5 1.5h15A1.5 1.5 0 0021 17V8a1.5 1.5 0 00-1.5-1.5h-2L15 4H9L6.5 6.5z"/>
+        </svg>
+        <span>Cette expérience utilise ta webcam — aucune donnée n'est envoyée</span>
+      </div>
+      <button class="cta" id="cta-btn">
+        <span class="cta__text">Lancer la mission</span>
+        <span class="cta__arrow">→</span>
+        <span class="cta__glow"></span>
+      </button>
+      <div class="stats">
+        <div class="stat"><span class="stat__value">5</span><span class="stat__label">MISSIONS</span></div>
+        <div class="stat__sep">·</div>
+        <div class="stat"><span class="stat__value">4</span><span class="stat__label">GESTES VITAUX</span></div>
+        <div class="stat__sep">·</div>
+        <div class="stat"><span class="stat__value">~15 MIN</span><span class="stat__label">POUR SAUVER UNE VIE</span></div>
+      </div>
+    </main>
+    <div class="scanlines"></div>
+  </div>
+
+  <!-- ══ HUB ═══════════════════════════════════════════════════════════════ -->
+  <div id="screen-hub" class="screen">
+    <canvas id="hub-bg"></canvas>
+    <div class="corner corner--tl"></div>
+    <div class="corner corner--tr"></div>
+    <div class="corner corner--bl"></div>
+    <div class="corner corner--br"></div>
+
+    <header class="hub-header">
+      <div class="hub-header__left">
+        <div class="hub-badge">CARTE DES MISSIONS</div>
+      </div>
+      <div class="hub-header__right">
+        <span id="hub-total-stars">0</span>
+        <span class="hub-star">★</span>
+        <span class="hub-star-label">ÉTOILES</span>
+      </div>
+    </header>
+
+    <div class="hub-map" id="hub-map"></div>
+
+    <div class="hub-modes">
+      <button class="mode-btn" id="btn-quiz" disabled>
+        <span>⚡</span> Quiz rapide
+      </button>
+      <button class="mode-btn" id="btn-challenge" disabled>
+        <span>🏆</span> Challenge
+      </button>
+    </div>
+
+    <div class="scanlines"></div>
+  </div>
+
+  <!-- ══ MISSION INTRO ══════════════════════════════════════════════════════ -->
+  <div id="screen-intro" class="screen">
+    <div class="intro-bg" id="intro-bg"></div>
+    <div class="corner corner--tl"></div>
+    <div class="corner corner--tr"></div>
+    <div class="corner corner--bl"></div>
+    <div class="corner corner--br"></div>
+
+    <div class="intro-wrap">
+      <div class="intro-badge" id="intro-badge">MISSION 1</div>
+      <div class="intro-icon" id="intro-icon">🫀</div>
+      <h2 class="intro-title" id="intro-title">Arrêt cardiaque</h2>
+      <p class="intro-scenario" id="intro-scenario"></p>
+      <div class="intro-objective">
+        <span class="intro-obj-label">OBJECTIF</span>
+        <span id="intro-objective-text"></span>
+      </div>
+      <div class="intro-actions">
+        <button class="back-btn" id="intro-back-btn">← Hub</button>
+        <button class="cta cta--small" id="intro-next-btn">
+          <span class="cta__text">Apprendre les gestes</span>
+          <span class="cta__arrow">→</span>
+          <span class="cta__glow"></span>
+        </button>
+      </div>
+    </div>
+    <div class="scanlines"></div>
+  </div>
+
+  <!-- ══ MISSION LEARN ══════════════════════════════════════════════════════ -->
+  <div id="screen-learn" class="screen">
+    <div class="corner corner--tl"></div>
+    <div class="corner corner--tr"></div>
+    <div class="corner corner--bl"></div>
+    <div class="corner corner--br"></div>
+
+    <div class="learn-header">
+      <button class="back-btn" id="learn-back-btn">← Retour</button>
+      <div class="learn-dots-wrap" id="learn-dots"></div>
+    </div>
+
+    <div class="learn-slides" id="learn-slides"></div>
+
+    <div class="learn-nav">
+      <button class="learn-nav__btn" id="learn-prev">←</button>
+      <button class="learn-nav__btn learn-nav__btn--next" id="learn-next">→</button>
+    </div>
+    <div class="scanlines"></div>
+  </div>
+
+  <!-- ══ MISSION PLAY ════════════════════════════════════════════════════════ -->
+  <div id="screen-play" class="screen">
+    <div class="corner corner--tl"></div>
+    <div class="corner corner--tr"></div>
+    <div class="corner corner--bl"></div>
+    <div class="corner corner--br"></div>
+    <div id="game-ui"></div>
+    <div class="scanlines"></div>
+  </div>
+
+  <!-- ══ MISSION FEEDBACK ═══════════════════════════════════════════════════ -->
+  <div id="screen-feedback" class="screen">
+    <div class="corner corner--tl"></div>
+    <div class="corner corner--tr"></div>
+    <div class="corner corner--bl"></div>
+    <div class="corner corner--br"></div>
+
+    <div class="feedback-wrap">
+      <div class="feedback-badge" id="feedback-badge">MISSION TERMINÉE</div>
+      <div class="feedback-stars" id="feedback-stars"></div>
+      <div class="feedback-stats" id="feedback-stats"></div>
+      <div class="feedback-tip" id="feedback-tip"></div>
+      <div class="feedback-actions">
+        <button class="back-btn" id="feedback-retry">↺ Rejouer</button>
+        <button class="cta cta--small" id="feedback-continue">
+          <span class="cta__text">Mission suivante</span>
+          <span class="cta__arrow">→</span>
+          <span class="cta__glow"></span>
+        </button>
+      </div>
+    </div>
+    <div class="scanlines"></div>
+  </div>
+
+  <!-- ══ QUIZ ═══════════════════════════════════════════════════════════════ -->
+  <div id="screen-quiz" class="screen">
+    <div class="corner corner--tl"></div>
+    <div class="corner corner--tr"></div>
+    <div class="corner corner--bl"></div>
+    <div class="corner corner--br"></div>
+    <div id="quiz-content"></div>
+    <div class="scanlines"></div>
+  </div>
+
+  <!-- ══ CHALLENGE ══════════════════════════════════════════════════════════ -->
+  <div id="screen-challenge" class="screen">
+    <div id="challenge-content"></div>
+    <div class="scanlines"></div>
+  </div>
+
+  <!-- Scripts (order matters) -->
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+  <script src="landing.js"></script>
+  <script src="hub.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="tracker.js"></script>
+  <script src="engine.js"></script>
+</body>
+</html>
