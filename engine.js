@@ -144,8 +144,7 @@ const Engine = {
 
     switch (config.type) {
       case 'cardiac':    this._game = new CardiacGame(config, ui);    break;
-      case 'pls':        this._game = new PLSGame(config, ui);        break;
-      case 'hemorrhage': this._game = new HemorrhageGame(config, ui); break;
+      case 'pls':        this._game = new PLSGame3D(config, ui);       break;
       case 'burn':       this._game = new BurnGame(config, ui);       break;
       case 'mixed':      this._game = new MixedGame(config, ui);      break;
     }
@@ -298,25 +297,52 @@ class CardiacGame {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GAME 2 — PLS (position latérale de sécurité, 5 gestes + vie victime)
+// GAME 2 — PLS 3D (mannequin 3D interactif + 3 modes)
 // ═══════════════════════════════════════════════════════════════════════════
 
-class PLSGame {
+class PLSGame3D {
   constructor(cfg, ui) {
-    this.cfg        = cfg;
-    this.ui         = ui;
-    this.step       = 0;
-    this.steps5     = this._buildSteps();
-    this.stepDone   = new Array(5).fill(false);
-    this.stepStart  = null;
-    this._timer     = null;
-    this._stepTick  = null;
-    this.timeLeft   = cfg.duration;
-    this.stepTL     = 0;
-    this.victimHP   = 100;
-    this.combo      = 0;
-    this.sweepPhase = 0;
+    this.cfg          = cfg;
+    this.ui           = ui;
+    this.mode         = null;
+    this.timeLeft     = cfg.duration;
+    this._initDur     = cfg.duration;
+    this._timer       = null;
+    this._stepTick    = null;
+    this.allSteps     = this._buildSteps();
+    this.step         = 0;
+    this.stepDone     = new Array(5).fill(false);
+    this.stepTL       = 0;
+    this.victimHP     = 100;
+    this.combo        = 0;
+    this.sweepPhase   = 0;
+    this.stepStart    = null;
+    this._wrongCooldown = false;
+    this._orderedDisplay = null;
+    this._started     = false;
+
+    // Mannequin animation state (each 0→1)
+    this.a = {
+      headCheck: 0,
+      headTilt:  0,
+      armLeft:   0,
+      kneeRight: 0,
+      sideRoll:  0,
+      holdPct:   0,
+      feedbackType:  'none',
+      feedbackAlpha: 0,
+      shakeOffset:   0,
+      shakeTimer:    0,
+      particles:     [],
+    };
+
+    this._canvas = null;
+    this._ctx    = null;
+    this._raf    = null;
+    this._lastT  = 0;
   }
+
+  // ── Step definitions ─────────────────────────────────────────────────────
 
   _buildSteps() {
     return [
@@ -326,6 +352,7 @@ class PLSGame {
         hint: 'Main ouverte en HAUT au centre — 1 seconde',
         timeLimit: 9,
         holdMs: 900,
+        animKey: 'headCheck',
         check: lm => {
           const w = Tracker.wrist(lm);
           return Tracker.isOpen(lm) && w && w.x > 0.28 && w.x < 0.72 && w.y < 0.38;
@@ -337,6 +364,7 @@ class PLSGame {
         hint: 'Glisse ta main vers la DROITE',
         timeLimit: 7,
         holdMs: 800,
+        animKey: 'headTilt',
         check: lm => {
           const w = Tracker.wrist(lm);
           return w && w.x > 0.73;
@@ -348,6 +376,7 @@ class PLSGame {
         hint: 'Poing FERMÉ à GAUCHE — attrape le bras !',
         timeLimit: 8,
         holdMs: 1000,
+        animKey: 'armLeft',
         check: lm => {
           const w = Tracker.wrist(lm);
           return Tracker.isClosed(lm) && w && w.x < 0.25;
@@ -359,6 +388,7 @@ class PLSGame {
         hint: 'Descends ta main tout en BAS',
         timeLimit: 7,
         holdMs: 800,
+        animKey: 'kneeRight',
         check: lm => {
           const w = Tracker.wrist(lm);
           return w && w.y > 0.78;
@@ -370,26 +400,533 @@ class PLSGame {
         hint: 'Balaye de DROITE vers GAUCHE — vite !',
         timeLimit: 10,
         holdMs: 0,
+        animKey: 'sideRoll',
         special: 'sweep',
         check: () => false,
       },
     ];
   }
 
+  // ── Entry point ───────────────────────────────────────────────────────────
+
   start() {
-    this._render();
+    this._showModeSelector();
+  }
+
+  _showModeSelector() {
+    this.ui.innerHTML = `
+      <div class="pls3d-mode-sel">
+        <div class="pls3d-mode-title">CHOISIR LE MODE</div>
+        <div class="pls3d-mode-desc">Comment veux-tu pratiquer la PLS ?</div>
+        <div class="pls3d-mode-btns">
+          <button class="pls3d-mode-btn" id="pls3d-m-normal">
+            <span class="pls3d-mode-btn__icon">▶</span>
+            <span class="pls3d-mode-btn__label">NORMAL</span>
+            <span class="pls3d-mode-btn__sub">Étapes guidées en ordre</span>
+          </button>
+          <button class="pls3d-mode-btn" id="pls3d-m-ordered">
+            <span class="pls3d-mode-btn__icon">🔀</span>
+            <span class="pls3d-mode-btn__label">ORDRE</span>
+            <span class="pls3d-mode-btn__sub">Reconstitue la bonne séquence</span>
+          </button>
+          <button class="pls3d-mode-btn pls3d-mode-btn--hot" id="pls3d-m-chrono">
+            <span class="pls3d-mode-btn__icon">⚡</span>
+            <span class="pls3d-mode-btn__label">CHRONO</span>
+            <span class="pls3d-mode-btn__sub">4s par geste — fais vite !</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    const pick = mode => {
+      this.mode = mode;
+      if (mode === 'chrono') {
+        this.allSteps.forEach(s => { s.timeLimit = 4; s.holdMs = Math.min(s.holdMs, 500); });
+        this.timeLeft   = 28;
+        this._initDur   = 28;
+      } else if (mode === 'ordered') {
+        this._orderedDisplay = [0, 1, 2, 3, 4].sort(() => Math.random() - 0.5);
+      }
+      this._startGame();
+    };
+
+    document.getElementById('pls3d-m-normal').onclick  = () => pick('normal');
+    document.getElementById('pls3d-m-ordered').onclick = () => pick('ordered');
+    document.getElementById('pls3d-m-chrono').onclick  = () => pick('chrono');
+  }
+
+  _startGame() {
+    this._started = true;
+    this._renderUI();
+    this._startCanvas();
     this._startStepTimer();
     this._timer = setInterval(() => {
       this.timeLeft--;
-      const el = document.getElementById('g-pls-time');
+      const el = document.getElementById('pls3d-time');
       if (el) el.textContent = this.timeLeft;
       if (this.timeLeft <= 0) this._finish();
     }, 1000);
   }
 
+  // ── UI ────────────────────────────────────────────────────────────────────
+
+  _renderUI() {
+    const s       = this.allSteps[this.step];
+    const hpColor = this._hpColor();
+    const modeTag = this.mode === 'chrono'  ? '⚡ CHRONO'
+                  : this.mode === 'ordered' ? '🔀 ORDRE' : '▶ NORMAL';
+
+    this.ui.innerHTML = `
+      <div class="pls3d-hud">
+        <!-- Full-screen 3D canvas — mannequin centered -->
+        <canvas id="pls3d-canvas"></canvas>
+
+        <!-- Top overlay bar -->
+        <div class="pls3d-overlay-top">
+          <div class="gh-timer"><span id="pls3d-time">${this.timeLeft}</span><span class="gh-unit">s</span></div>
+          <div class="pls3d-htitle">
+            <div class="gh-title">POSITION DE SÉCURITÉ</div>
+            <div class="pls3d-mode-tag">${modeTag}</div>
+          </div>
+          <div class="pls3d-steptimer">
+            <span id="pls3d-step-timer" class="pls-step-tick">${s.timeLimit}</span>
+            <span class="gh-unit">/geste</span>
+          </div>
+        </div>
+
+        <!-- Bottom overlay bar -->
+        <div class="pls3d-overlay-bottom">
+          <div class="pls3d-pills" id="pls3d-pills">${this._renderPills()}</div>
+
+          <div class="pls3d-victim-bar">
+            <span class="pls-victim-lbl">❤️</span>
+            <div class="pls-victim-bg">
+              <div class="pls-victim-fill" id="pls3d-hp"
+                style="width:${this.victimHP}%; background:${hpColor}; box-shadow:0 0 8px ${hpColor}88"></div>
+            </div>
+            <span class="pls-victim-val" id="pls3d-hp-val" style="color:${hpColor}">${this.victimHP}%</span>
+          </div>
+
+          <div id="pls3d-danger" class="pls-danger">⚠️ TROP LENT — ELLE SUFFOQUE !</div>
+
+          <div class="pls3d-hint" id="pls3d-hint">${s.hint}</div>
+
+          <div class="pls-progress">
+            <div class="pls-prog-bar" id="pls3d-bar" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Horizontal step pills for the bottom bar
+  _renderPills() {
+    const steps = this.allSteps;
+    const order = (this.mode === 'ordered' && this._orderedDisplay)
+                ? this._orderedDisplay
+                : steps.map((_, i) => i);
+
+    return order.map(i => {
+      const st     = steps[i];
+      const active = i === this.step;
+      const done   = this.stepDone[i];
+      const failed = i < this.step && !done;
+      const cls    = active ? 'pls3d-pill--active' : done ? 'pls3d-pill--done' : failed ? 'pls3d-pill--fail' : '';
+      const badge  = done ? '✓' : failed ? '✗' : String(i + 1);
+      return `
+        <div class="pls3d-pill ${cls}">
+          <span class="pls3d-pill__badge">${badge}</span>
+          <span class="pls3d-pill__icon">${st.icon}</span>
+          <span class="pls3d-pill__label">${st.label}</span>
+        </div>`;
+    }).join('');
+  }
+
+  _hpColor() {
+    return this.victimHP > 60 ? '#00ffcc' : this.victimHP > 30 ? '#ffaa00' : '#ff2244';
+  }
+
+  _updateUI() {
+    const pills = document.getElementById('pls3d-pills');
+    if (pills) pills.innerHTML = this._renderPills();
+    const hint = document.getElementById('pls3d-hint');
+    if (hint) hint.textContent = this.allSteps[this.step]?.hint || '';
+    const bar = document.getElementById('pls3d-bar');
+    if (bar) bar.style.width = '0%';
+    this._updateHP();
+  }
+
+  _updateHP() {
+    const c = this._hpColor();
+    const f = document.getElementById('pls3d-hp');
+    const v = document.getElementById('pls3d-hp-val');
+    if (f) { f.style.width = this.victimHP + '%'; f.style.background = c; f.style.boxShadow = `0 0 8px ${c}88`; }
+    if (v) { v.textContent = this.victimHP + '%'; v.style.color = c; }
+  }
+
+  // ── 3D Canvas ─────────────────────────────────────────────────────────────
+
+  _startCanvas() {
+    this._canvas = document.getElementById('pls3d-canvas');
+    if (!this._canvas) return;
+    this._ctx = this._canvas.getContext('2d');
+    this._resizeCanvas();
+    this._onResize = () => this._resizeCanvas();
+    window.addEventListener('resize', this._onResize);
+    this._lastT = performance.now();
+    this._raf   = requestAnimationFrame(t => this._drawFrame(t));
+  }
+
+  _resizeCanvas() {
+    if (!this._canvas) return;
+    this._canvas.width  = window.innerWidth;
+    this._canvas.height = window.innerHeight;
+  }
+
+  // Camera at (0,3,4) looking at origin.
+  // sc scales with screen size so mannequin fills the center.
+  _project(x, y, z) {
+    const W = this._canvas.width, H = this._canvas.height;
+    const tx = x;
+    const ty = 0.8 * (y - 3) - 0.6 * (z - 4);
+    const tz = 0.6 * (y - 3) + 0.8 * (z - 4);
+    const depth = -tz;
+    if (depth < 0.1) return { x: W / 2, y: H / 2, depth: 0.1, s: 1 };
+    const fov = 3.5;
+    const sc  = Math.min(W, H) * 0.46;
+    const s   = fov / depth;
+    return {
+      x:     W / 2 + tx * s * sc,
+      y:     H * 0.46 - ty * s * sc,
+      depth,
+      s:     s * sc,
+    };
+  }
+
+  _drawFrame(t) {
+    if (!this._canvas || !this._ctx) return;
+    const dt = Math.min((t - this._lastT) / 1000, 0.1);
+    this._lastT = t;
+    this._updateAnim(dt);
+
+    const ctx = this._ctx;
+    const W = this._canvas.width, H = this._canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    this._drawFloor(ctx, W, H);
+    const joints = this._getJoints();
+    this._drawShadows(ctx, joints);
+    this._drawBody(ctx, joints);
+    this._drawFeedbackFx(ctx, W, H);
+    this._drawParticles(ctx);
+
+    // Hold-progress arc on active joint
+    if (this.stepStart && this.a.holdPct > 0 && this.a.holdPct < 1) {
+      const s   = this.allSteps[this.step];
+      const key = { headCheck:'head', headTilt:'head', armLeft:'lElbow', kneeRight:'rKnee', sideRoll:'abdomen' }[s.animKey] || 'chest';
+      const p   = this._project(...joints[key]);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 20 * p.s / 150, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this.a.holdPct);
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth   = 2.5;
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur  = 8;
+      ctx.stroke();
+      ctx.shadowBlur  = 0;
+    }
+
+    this._raf = requestAnimationFrame(ts => this._drawFrame(ts));
+  }
+
+  _drawFloor(ctx, W, H) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,255,204,0.07)';
+    ctx.lineWidth   = 0.5;
+    const xs = [-1.0, -0.6, -0.2, 0.2, 0.6, 1.0];
+    const zs = [-1.0, -0.6, -0.2, 0.2, 0.6, 1.0];
+    for (const xv of xs) {
+      const p1 = this._project(xv, -0.05, -1.1);
+      const p2 = this._project(xv, -0.05,  1.0);
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    }
+    for (const zv of zs) {
+      const p1 = this._project(-1.1, -0.05, zv);
+      const p2 = this._project( 1.1, -0.05, zv);
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  _drawShadows(ctx, joints) {
+    ctx.save();
+    ctx.globalAlpha = 0.20;
+    ctx.fillStyle   = '#000';
+    for (const key of ['head', 'chest', 'lElbow', 'rElbow', 'lKnee', 'rKnee']) {
+      const j = joints[key]; if (!j) continue;
+      const p = this._project(j[0], -0.04, j[2]);
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, Math.max(3, 11 * p.s / 150), Math.max(2, 4 * p.s / 150), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Returns joint map: key → [x,y,z]
+  // Body laid flat (Y≈0), head at negative Z (top of canvas), feet at positive Z (bottom)
+  _getJoints() {
+    const j = {
+      head:      [ 0,      0,     -0.86],
+      neck:      [ 0,      0,     -0.65],
+      lShoulder: [-0.24,   0,     -0.50],
+      rShoulder: [ 0.24,   0,     -0.50],
+      chest:     [ 0,      0,     -0.38],
+      lElbow:    [-0.44,   0,     -0.24],
+      rElbow:    [ 0.44,   0,     -0.24],
+      lWrist:    [-0.44,   0,      0.03],
+      rWrist:    [ 0.44,   0,      0.03],
+      abdomen:   [ 0,      0,     -0.12],
+      lHip:      [-0.20,   0,      0.10],
+      rHip:      [ 0.20,   0,      0.10],
+      lKnee:     [-0.20,   0,      0.44],
+      rKnee:     [ 0.20,   0,      0.44],
+      lAnkle:    [-0.20,   0,      0.82],
+      rAnkle:    [ 0.20,   0,      0.82],
+    };
+
+    // Step 1 — headCheck: glowing pulse (no position change, handled in draw)
+
+    // Step 2 — headTilt: head tilts back / rises
+    const ht = this.a.headTilt;
+    j.head[1]   += ht * 0.20;
+    j.head[2]   += ht * (-0.06);
+    j.neck[1]   += ht * 0.07;
+
+    // Step 3 — armLeft: left arm extends out perpendicular to body
+    const al = this.a.armLeft;
+    j.lElbow[0] += al * (-0.30);
+    j.lElbow[2] += al * (-0.26);
+    j.lElbow[1] += al * 0.10;
+    j.lWrist[0] += al * (-0.60);
+    j.lWrist[2] += al * (-0.54);
+    j.lWrist[1] += al * 0.12;
+
+    // Step 4 — kneeRight: right knee bends upward
+    const kr = this.a.kneeRight;
+    j.rKnee[1]  += kr * 0.38;
+    j.rKnee[2]  += kr * (-0.26);
+    j.rAnkle[1] += kr * 0.12;
+    j.rAnkle[2] += kr * (-0.36);
+    j.rAnkle[0] += kr * 0.05;
+
+    // Step 5 — sideRoll: rotate all joints ~79° around Z-axis (body's long axis)
+    if (this.a.sideRoll > 0) {
+      const angle = this.a.sideRoll * (Math.PI * 0.44);
+      const cosA  = Math.cos(angle), sinA = Math.sin(angle);
+      Object.keys(j).forEach(k => {
+        const [x, y, z] = j[k];
+        j[k] = [x * cosA - y * sinA, x * sinA + y * cosA, z];
+      });
+    }
+
+    // Shake offset (bad feedback)
+    if (this.a.shakeOffset) {
+      Object.keys(j).forEach(k => { j[k] = [j[k][0] + this.a.shakeOffset, j[k][1], j[k][2]]; });
+    }
+
+    return j;
+  }
+
+  _drawBody(ctx, joints) {
+    const { headCheck, feedbackType, feedbackAlpha } = this.a;
+    const baseC  = '#00ddcc';
+    const goodC  = '#00ffcc';
+    const badC   = '#ff5555';
+    const boneC  = feedbackType === 'good' ? goodC : feedbackType === 'bad' ? badC : baseC;
+    const alpha  = feedbackType === 'bad'  ? Math.max(0.5, 1 - feedbackAlpha * 0.4) : 1;
+    const glow   = feedbackType === 'good' ? 1 + feedbackAlpha * 2 : 1;
+
+    const proj = key => this._project(...joints[key]);
+
+    const bone = (k1, k2, r = 0.055) => {
+      const p1 = proj(k1), p2 = proj(k2);
+      const w  = Math.max(3, r * (p1.s + p2.s));
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = boneC;
+      ctx.lineWidth   = w;
+      ctx.lineCap     = 'round';
+      ctx.shadowColor = boneC;
+      ctx.shadowBlur  = 5 * glow;
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+      ctx.restore();
+    };
+
+    const joint = (key, r = 0.08) => {
+      const p = proj(key);
+      const radius = Math.max(2.5, r * p.s);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle   = boneC;
+      ctx.shadowColor = boneC;
+      ctx.shadowBlur  = 6 * glow;
+      ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    };
+
+    // Torso
+    bone('neck', 'chest'); bone('chest', 'abdomen');
+    bone('lShoulder', 'rShoulder');
+    bone('neck', 'lShoulder'); bone('neck', 'rShoulder');
+    bone('abdomen', 'lHip'); bone('abdomen', 'rHip'); bone('lHip', 'rHip');
+
+    // Arms
+    bone('lShoulder', 'lElbow'); bone('lElbow', 'lWrist');
+    bone('rShoulder', 'rElbow'); bone('rElbow', 'rWrist');
+
+    // Legs
+    bone('lHip', 'lKnee'); bone('lKnee', 'lAnkle');
+    bone('rHip', 'rKnee'); bone('rKnee', 'rAnkle');
+
+    // Joints
+    ['lShoulder','rShoulder','lElbow','rElbow','lHip','rHip','lKnee','rKnee','lWrist','rWrist','lAnkle','rAnkle']
+      .forEach(k => joint(k, 0.065));
+
+    // Head — special rendering with breathing check glow
+    const ph = proj('head');
+    const hr = Math.max(6, 0.17 * ph.s);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (headCheck > 0.05) {
+      const pulse = 1 + Math.sin(Date.now() * 0.006) * 0.15 * headCheck;
+      const g = ctx.createRadialGradient(ph.x, ph.y, hr * 0.4, ph.x, ph.y, hr * 3.2 * pulse);
+      g.addColorStop(0, `rgba(255,220,0,${0.45 * headCheck})`);
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(ph.x, ph.y, hr * 3.2 * pulse, 0, Math.PI * 2); ctx.fill();
+    }
+    const hg = ctx.createRadialGradient(ph.x - hr * 0.3, ph.y - hr * 0.3, 0, ph.x, ph.y, hr);
+    hg.addColorStop(0, '#66ffee');
+    hg.addColorStop(1, '#009988');
+    ctx.fillStyle   = hg;
+    ctx.shadowColor = boneC;
+    ctx.shadowBlur  = 10 * glow;
+    ctx.beginPath(); ctx.arc(ph.x, ph.y, hr, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // Roll effect: dashed axis line when body is rolling
+    if (this.a.sideRoll > 0.05) {
+      const pa = proj('abdomen');
+      ctx.save();
+      ctx.globalAlpha = this.a.sideRoll * 0.5;
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.moveTo(proj('neck').x, proj('neck').y);
+      ctx.lineTo(proj('rAnkle').x, proj('rAnkle').y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+
+  _drawFeedbackFx(ctx, W, H) {
+    const { feedbackType, feedbackAlpha } = this.a;
+    if (feedbackAlpha < 0.01) return;
+    ctx.save();
+    if (feedbackType === 'good') {
+      ctx.globalAlpha = feedbackAlpha * 0.45;
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth   = 5;
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur  = 18;
+      ctx.strokeRect(3, 3, W - 6, H - 6);
+    } else if (feedbackType === 'bad') {
+      ctx.globalAlpha = feedbackAlpha * 0.45;
+      const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.15, W / 2, H / 2, H * 0.75);
+      grad.addColorStop(0, 'transparent');
+      grad.addColorStop(1, 'rgba(255,60,60,0.7)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+  }
+
+  _drawParticles(ctx) {
+    for (const p of this.a.particles) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur  = 5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // ── Animation ─────────────────────────────────────────────────────────────
+
+  _updateAnim(dt) {
+    const lerp = (a, b, t) => a + (b - a) * Math.min(1, t);
+    const spd  = 2.8;
+
+    ['headCheck','headTilt','armLeft','kneeRight','sideRoll'].forEach((k, i) => {
+      this.a[k] = lerp(this.a[k], this.stepDone[i] ? 1 : 0, dt * spd);
+    });
+
+    if (this.a.feedbackAlpha > 0) {
+      this.a.feedbackAlpha = Math.max(0, this.a.feedbackAlpha - dt * 2.5);
+      if (this.a.feedbackAlpha < 0.01) this.a.feedbackType = 'none';
+    }
+
+    if (this.a.shakeTimer > 0) {
+      this.a.shakeTimer  -= dt;
+      this.a.shakeOffset  = Math.sin(this.a.shakeTimer * 65) * 0.045 * (this.a.shakeTimer / 0.4);
+    } else {
+      this.a.shakeOffset = 0;
+    }
+
+    this.a.particles = this.a.particles.filter(p => {
+      p.life -= dt * 1.4;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 140 * dt;
+      return p.life > 0;
+    });
+  }
+
+  _triggerGood() {
+    this.a.feedbackType  = 'good';
+    this.a.feedbackAlpha = 1;
+    if (!this._canvas) return;
+    const joints = this._getJoints();
+    const s      = this.allSteps[this.step];
+    const jKey   = { headCheck:'head', headTilt:'head', armLeft:'lElbow', kneeRight:'rKnee', sideRoll:'abdomen' }[s.animKey] || 'chest';
+    const p      = this._project(...joints[jKey]);
+    for (let i = 0; i < 14; i++) {
+      const ang = Math.random() * Math.PI * 2, spd = 70 + Math.random() * 110;
+      this.a.particles.push({
+        x: p.x, y: p.y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd - 70,
+        r:  2 + Math.random() * 3,
+        color: Math.random() > 0.5 ? '#00ffcc' : '#ffdd00',
+        life: 0.7 + Math.random() * 0.5,
+      });
+    }
+  }
+
+  _triggerBad() {
+    this.a.feedbackType  = 'bad';
+    this.a.feedbackAlpha = 1;
+    this.a.shakeTimer    = 0.38;
+  }
+
+  // ── Step timers ───────────────────────────────────────────────────────────
+
   _startStepTimer() {
     clearInterval(this._stepTick);
-    const s = this.steps5[this.step];
+    const s = this.allSteps[this.step];
     if (!s) return;
     this.stepTL = s.timeLimit;
     this._updateStepTimer();
@@ -399,13 +936,14 @@ class PLSGame {
       this._updateStepTimer();
       if (this.stepTL <= 0) {
         this.victimHP = Math.max(0, this.victimHP - 25);
-        this.combo = 0;
+        this.combo    = 0;
         clearInterval(this._stepTick);
         this._flashDanger();
+        this._triggerBad();
         if (this.step < 4) {
           this.step++;
           this.sweepPhase = 0;
-          this._render();
+          this._updateUI();
           this._startStepTimer();
         } else {
           this._finish();
@@ -415,85 +953,51 @@ class PLSGame {
   }
 
   _updateStepTimer() {
-    const el = document.getElementById('g-step-timer');
+    const el = document.getElementById('pls3d-step-timer');
     if (!el) return;
-    el.textContent = this.stepTL;
     const danger = this.stepTL <= 3;
+    el.textContent = this.stepTL;
     el.style.color = danger ? '#ff2244' : '#ffaa00';
     el.classList.toggle('pls-step-tick--danger', danger);
   }
 
   _flashDanger() {
-    const el = document.getElementById('g-pls-danger');
+    const el = document.getElementById('pls3d-danger');
     if (!el) return;
     el.classList.add('pls-danger--show');
     setTimeout(() => el?.classList.remove('pls-danger--show'), 900);
   }
 
-  _render() {
-    const steps = this.steps5;
-    const s = steps[this.step];
-    const hpColor = this.victimHP > 60 ? '#00ffcc' : this.victimHP > 30 ? '#ffaa00' : '#ff2244';
-
-    this.ui.innerHTML = `
-      <div class="game-hud pls-hud">
-        <div class="gh-top">
-          <div class="gh-timer"><span id="g-pls-time">${this.timeLeft}</span><span class="gh-unit">s</span></div>
-          <div class="gh-title">POSITION DE SÉCURITÉ</div>
-          <div class="pls-steptimer-wrap">
-            <span id="g-step-timer" class="pls-step-tick">${s.timeLimit}</span>
-            <span class="gh-unit">/étape</span>
-          </div>
-        </div>
-
-        <div class="pls-victim-bar">
-          <span class="pls-victim-lbl">❤️ VIE VICTIME</span>
-          <div class="pls-victim-bg">
-            <div class="pls-victim-fill" id="g-victim-fill"
-              style="width:${this.victimHP}%; background:${hpColor}; box-shadow: 0 0 8px ${hpColor}88"></div>
-          </div>
-          <span class="pls-victim-val" id="g-victim-val" style="color:${hpColor}">${this.victimHP}%</span>
-        </div>
-
-        <div id="g-pls-danger" class="pls-danger">⚠️ TROP LENT — ELLE SUFFOQUE !</div>
-
-        <div class="pls-steps">
-          ${steps.map((st, i) => {
-            const active = i === this.step;
-            const done   = this.stepDone[i];
-            const failed = i < this.step && !done;
-            return `
-            <div class="pls-step ${active ? 'pls-step--active' : ''} ${done ? 'pls-step--done' : ''} ${failed ? 'pls-step--failed' : ''}">
-              <span class="pls-step__num">${i + 1}</span>
-              <span class="pls-step__icon">${st.icon}</span>
-              <span class="pls-step__label">${st.label}</span>
-              ${done   ? '<span class="pls-step__check">✓</span>'                     : ''}
-              ${failed ? '<span class="pls-step__check pls-step__check--fail">✗</span>' : ''}
-            </div>`;
-          }).join('')}
-        </div>
-
-        <div class="pls-hint" id="g-pls-hint">${s.hint}</div>
-
-        ${this.combo >= 2 ? `<div class="pls-combo">⚡ COMBO ×${this.combo} !</div>` : '<div class="pls-combo pls-combo--hidden"></div>'}
-
-        <div class="pls-progress">
-          <div class="pls-prog-bar" id="g-pls-bar" style="width: 0%"></div>
-        </div>
-      </div>
-    `;
-  }
+  // ── Gesture handling ──────────────────────────────────────────────────────
 
   onHand(hands) {
+    if (!this._started) return;
     const lm = hands[0];
-    const s  = this.steps5[this.step];
+    const s  = this.allSteps[this.step];
     if (!s || this.stepDone[this.step]) return;
 
+    // Ordered mode: penalise wrong-order gestures
+    if (this.mode === 'ordered' && lm && !this._wrongCooldown) {
+      if (this._isWrongGesture(lm)) {
+        this._wrongCooldown = true;
+        this._triggerBad();
+        this.victimHP = Math.max(0, this.victimHP - 5);
+        this._updateHP();
+        const hint = document.getElementById('pls3d-hint');
+        if (hint) {
+          hint.textContent = `⚠️ MAUVAIS GESTE — ${s.hint}`;
+          setTimeout(() => { if (hint) hint.textContent = s.hint; this._wrongCooldown = false; }, 1400);
+        }
+        return;
+      }
+    }
+
+    // Sweep gesture (step 5)
     if (s.special === 'sweep') {
       if (!lm) { this.sweepPhase = 0; return; }
       const w = Tracker.wrist(lm);
       if (!w) return;
-      const hint = document.getElementById('g-pls-hint');
+      const hint = document.getElementById('pls3d-hint');
       if (this.sweepPhase === 0 && w.x > 0.65) {
         this.sweepPhase = 1;
         if (hint) hint.textContent = '👍 Maintenant balaye vers la GAUCHE !';
@@ -504,8 +1008,9 @@ class PLSGame {
     }
 
     if (!lm) {
-      this.stepStart = null;
-      const bar = document.getElementById('g-pls-bar');
+      this.stepStart  = null;
+      this.a.holdPct  = 0;
+      const bar = document.getElementById('pls3d-bar');
       if (bar) bar.style.width = '0%';
       return;
     }
@@ -513,14 +1018,26 @@ class PLSGame {
     if (s.check(lm)) {
       if (!this.stepStart) this.stepStart = Date.now();
       const pct = Math.min(100, ((Date.now() - this.stepStart) / s.holdMs) * 100);
-      const bar = document.getElementById('g-pls-bar');
+      this.a.holdPct = pct / 100;
+      const bar = document.getElementById('pls3d-bar');
       if (bar) bar.style.width = pct + '%';
       if (pct >= 100) this._completeStep();
     } else {
-      this.stepStart = null;
-      const bar = document.getElementById('g-pls-bar');
+      this.stepStart  = null;
+      this.a.holdPct  = 0;
+      const bar = document.getElementById('pls3d-bar');
       if (bar) bar.style.width = '0%';
     }
+  }
+
+  _isWrongGesture(lm) {
+    for (let i = 0; i < this.allSteps.length; i++) {
+      if (i === this.step || this.stepDone[i]) continue;
+      const other = this.allSteps[i];
+      if (other.special === 'sweep') continue;
+      if (other.check(lm)) return true;
+    }
+    return false;
   }
 
   _completeStep() {
@@ -528,169 +1045,46 @@ class PLSGame {
     this.stepDone[this.step] = true;
     this.stepStart  = null;
     this.sweepPhase = 0;
+    this.a.holdPct  = 0;
     this.combo++;
+    this._triggerGood();
     clearInterval(this._stepTick);
     if (this.stepTL >= 5) this.victimHP = Math.min(100, this.victimHP + 5);
 
     const next = this.step + 1;
-    if (next < this.steps5.length) {
+    if (next < this.allSteps.length) {
       this.step = next;
-      this._render();
-      this._startStepTimer();
+      setTimeout(() => { this._updateUI(); this._startStepTimer(); }, 650);
     } else {
-      this._finish();
+      setTimeout(() => this._finish(), 850);
     }
   }
+
+  // ── Finish ────────────────────────────────────────────────────────────────
 
   _finish() {
     clearInterval(this._timer);
     clearInterval(this._stepTick);
-    const done     = this.stepDone.filter(Boolean).length;
-    const timeUsed = this.cfg.duration - this.timeLeft;
-    const stars    = (done === 5 && this.victimHP > 60) ? 3
-                   : done === 5                          ? 2
-                   : done >= 3                           ? 1 : 0;
+    if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
+    if (this._onResize) { window.removeEventListener('resize', this._onResize); this._onResize = null; }
 
+    const done  = this.stepDone.filter(Boolean).length;
+    const tUsed = this._initDur - this.timeLeft;
+    const stars = (done === 5 && this.victimHP > 60) ? 3
+                : done === 5                          ? 2
+                : done >= 3                           ? 1 : 0;
+
+    const modeLabel = this.mode === 'chrono' ? '⚡ Chrono' : this.mode === 'ordered' ? '🔀 Ordre' : '▶ Normal';
     Engine.end(stars, [
-      { val: `${done}/5`,           lbl: 'Étapes réussies' },
-      { val: this.victimHP + '%',   lbl: 'Vie victime' },
-      { val: timeUsed + 's',        lbl: 'Temps utilisé' },
+      { val: `${done}/5`,         lbl: 'Étapes réussies' },
+      { val: this.victimHP + '%', lbl: 'Vie victime' },
+      { val: modeLabel,           lbl: 'Mode joué' },
     ]);
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GAME 3 — Hemorrhage (maintenir la pression)
-// ═══════════════════════════════════════════════════════════════════════════
-
-class HemorrhageGame {
-  constructor(cfg, ui) {
-    this.cfg         = cfg;
-    this.ui          = ui;
-    this.timeLeft    = cfg.duration;
-    this.heldTime    = 0;
-    this.pressing    = false;
-    this.stability   = 0;
-    this.lastPos     = null;
-    this._timer      = null;
-    this._holdTimer  = null;
-    this.totalHeld   = 0;
-  }
-
-  start() {
-    // Target zone: center of screen (normalized)
-    this.target = { x: 0.5, y: 0.55, r: 0.18 };
-
-    this.ui.innerHTML = `
-      <div class="game-hud">
-        <div class="gh-top">
-          <div class="gh-timer"><span id="g-h-time">${this.timeLeft}</span><span class="gh-unit">s</span></div>
-          <div class="gh-title">COMPRESSION DE PLAIE</div>
-          <div></div>
-        </div>
-
-        <div class="hem-zone">
-          <div class="hem-wound" id="g-wound">
-            <div class="hem-wound__inner"></div>
-            <div class="hem-label">PLAIE</div>
-          </div>
-          <div class="hem-status" id="g-hem-status">Pose ton poing fermé sur la plaie</div>
-        </div>
-
-        <div class="gh-bar-wrap">
-          <div class="gh-bar-label">PRESSION MAINTENUE — OBJECTIF : ${this.cfg.holdDuration}s</div>
-          <div class="gh-bar-bg"><div class="gh-bar-fill" id="g-h-bar" style="background: #cc2200; width: 0%"></div></div>
-        </div>
-
-        <div class="hem-held">
-          <span id="g-held">0.0</span><span class="gh-unit">s tenu / ${this.cfg.holdDuration}s</span>
-        </div>
-      </div>
-    `;
-
-    // Draw wound on AR canvas (in game-specific layer)
-    this._timer = setInterval(() => {
-      this.timeLeft--;
-      const el = document.getElementById('g-h-time');
-      if (el) el.textContent = this.timeLeft;
-      if (this.timeLeft <= 0) this._finish();
-    }, 1000);
-
-    this._holdTimer = setInterval(() => {
-      if (this.pressing) {
-        this.heldTime += 0.1;
-        this.totalHeld += 0.1;
-        const pct = Math.min(100, (this.heldTime / this.cfg.holdDuration) * 100);
-        const bar = document.getElementById('g-h-bar');
-        const hld = document.getElementById('g-held');
-        if (bar) bar.style.width = pct + '%';
-        if (hld) hld.textContent = this.heldTime.toFixed(1);
-        if (this.heldTime >= this.cfg.holdDuration) this._finish();
-      }
-    }, 100);
-  }
-
-  onHand(hands) {
-    const lm = hands[0];
-    const statusEl = document.getElementById('g-hem-status');
-    const wound    = document.getElementById('g-wound');
-
-    if (!lm) {
-      this.pressing = false;
-      if (statusEl) statusEl.textContent = 'Pose ton poing fermé sur la plaie';
-      if (wound) wound.classList.remove('hem-wound--active');
-      return;
-    }
-
-    const w   = Tracker.wrist(lm);
-    const inZone = Math.abs(w.x - this.target.x) < this.target.r &&
-                   Math.abs(w.y - this.target.y) < this.target.r;
-    const fist = Tracker.isClosed(lm);
-
-    // Stability: check hand not moving too much
-    let stable = true;
-    if (this.lastPos) {
-      const dx = Math.abs(w.x - this.lastPos.x);
-      const dy = Math.abs(w.y - this.lastPos.y);
-      stable = dx < 0.04 && dy < 0.04;
-    }
-    this.lastPos = w;
-
-    this.pressing = inZone && fist && stable;
-
-    if (wound) wound.classList.toggle('hem-wound--active', this.pressing);
-    if (statusEl) {
-      statusEl.textContent =
-        !fist    ? 'Ferme ton poing !' :
-        !inZone  ? 'Déplace ta main sur la plaie ↕' :
-        !stable  ? 'Ne bouge plus — tiens ferme' :
-        '✅ Pression maintenue !';
-    }
-
-    // Reset if let go
-    if (!this.pressing && this.heldTime > 0 && this.heldTime < this.cfg.holdDuration) {
-      this.heldTime = Math.max(0, this.heldTime - 0.5);
-    }
-  }
-
-  _finish() {
-    clearInterval(this._timer);
-    clearInterval(this._holdTimer);
-
-    const held  = Math.min(this.totalHeld, this.cfg.holdDuration);
-    const pct   = (held / this.cfg.holdDuration) * 100;
-    const stars = pct >= 90 ? 3 : pct >= 60 ? 2 : pct >= 30 ? 1 : 0;
-
-    Engine.end(stars, [
-      { val: held.toFixed(1) + 's', lbl: 'Pression totale tenue' },
-      { val: Math.round(pct) + '%', lbl: 'Objectif atteint' },
-      { val: stars === 3 ? 'Hémorragie contrôlée ✓' : 'Continuez à pratiquer', lbl: 'Résultat' },
-    ]);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// GAME 4 — Burn (refroidir la brûlure — couverture de zone)
+// GAME 3 — Burn (refroidir la brûlure — couverture de zone)
 // ═══════════════════════════════════════════════════════════════════════════
 
 class BurnGame {

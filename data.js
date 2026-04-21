@@ -38,26 +38,7 @@ const MISSIONS = [
     ],
   },
   {
-    id: 'hemorrhage', num: 3, icon: '🩸', title: 'Hémorragie', color: '#cc2200',
-    unlocked: false, stars: 0,
-    intro: {
-      scenario: "Une personne saigne abondamment d'une blessure au bras.\nLe sang ne s'arrête pas seul.",
-      objective: "Stopper l'hémorragie et maintenir la pression",
-    },
-    learn: [
-      { icon: '✋', title: 'Comprimer la plaie',    body: 'Appuie fort et directement sur la blessure avec ta main ou un tissu propre. Ne relâche jamais.' },
-      { icon: '⏱️', title: 'Maintenir 10 minutes', body: 'Garde la pression sans jamais soulever le tissu. Si le sang transperce, ajoute du tissu par-dessus.' },
-      { icon: '📞', title: 'Appeler le 15',         body: 'Allonge la victime et appelle les secours. Continue à comprimer pendant l\'appel.' },
-    ],
-    game: { type: 'hemorrhage', holdDuration: 10, duration: 25 },
-    tips: [
-      'Ne jamais retirer un objet planté dans une plaie',
-      'Un garrot n\'est utilisé qu\'en dernier recours (hémorragie incontrôlable)',
-      'Rassure la victime — le stress aggrave le saignement',
-    ],
-  },
-  {
-    id: 'burn', num: 4, icon: '🔥', title: 'Brûlure', color: '#ff6600',
+    id: 'burn', num: 3, icon: '🔥', title: 'Brûlure', color: '#ff6600',
     unlocked: false, stars: 0,
     intro: {
       scenario: "Un enfant s'est renversé de l'eau bouillante sur le bras.\nLa peau rougit. Il faut agir dans les secondes qui suivent.",
@@ -76,7 +57,7 @@ const MISSIONS = [
     ],
   },
   {
-    id: 'bonus', num: 5, icon: '🧠', title: 'Situations mixtes', color: '#8844ff',
+    id: 'bonus', num: 4, icon: '🧠', title: 'Situations mixtes', color: '#8844ff',
     unlocked: false, stars: 0,
     intro: {
       scenario: "Tu arrives sur les lieux d'un accident.\nPlusieurs victimes, plusieurs urgences différentes.",

@@ -735,6 +735,167 @@
   color: #fff;
 }
 
+/* ── Hemorrhage v2 — mannequin + 3 plaies ───────────────────────────────── */
+.hem2-hud { gap: 10px; }
+
+.hem2-blood-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.hem2-blood-lbl { font-size: 10px; letter-spacing: 2px; white-space: nowrap; }
+.hem2-blood-bg {
+  flex: 1;
+  height: 10px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.hem2-blood-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 5px;
+  background: #cc2200;
+  transition: width 0.1s, background 0.3s;
+}
+.hem2-blood-pct {
+  font-size: 13px;
+  font-weight: bold;
+  min-width: 40px;
+  text-align: right;
+  font-family: 'Arial Black', sans-serif;
+}
+.hem2-wounds-ctr { font-size: 20px !important; }
+
+.hem2-danger {
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: #ff2244;
+  font-weight: bold;
+  padding: 5px 8px;
+  border: 1px solid rgba(255,34,68,0.4);
+  border-radius: 4px;
+  background: rgba(255,34,68,0.1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+@keyframes hem2-blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.hem2-danger--show { opacity: 1; animation: hem2-blink 0.6s steps(1) infinite; }
+
+/* Body wrap — takes remaining space */
+.hem2-body-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+.hem2-body-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* SVG wound pulse */
+@keyframes hw-svg-pulse-anim {
+  0%,100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+.hw-svg-pulse { animation: hw-svg-pulse-anim 0.65s ease-in-out infinite; }
+.hw-svg-ring  { animation: hw-svg-pulse-anim 0.65s ease-in-out infinite reverse; }
+
+/* Wound interaction wrap — centered on wound coords */
+.hw-wound-wrap {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+/* Pulsing dot */
+.hw-wound-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #cc2200 30%, transparent 70%);
+  animation: hw-dot-pulse 0.65s ease-in-out infinite;
+  position: relative;
+  z-index: 2;
+}
+@keyframes hw-dot-pulse {
+  0%,100% { transform: scale(1);   box-shadow: 0 0 8px 2px rgba(200,0,0,0.5); }
+  50%      { transform: scale(1.5); box-shadow: 0 0 18px 6px rgba(255,20,20,0.7); }
+}
+.hw-wound-wrap--sealed .hw-wound-dot {
+  animation: none;
+  background: radial-gradient(circle, #00ff88 30%, transparent 70%);
+  box-shadow: 0 0 10px #00ff8888;
+}
+
+/* Blood drips */
+.hw-drip-container {
+  position: absolute;
+  top: 9px;
+  left: -8px;
+  width: 20px;
+  height: 55px;
+  overflow: visible;
+  pointer-events: none;
+}
+.hw-drop {
+  position: absolute;
+  background: #aa0000;
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
+  opacity: 0;
+  animation: hw-drip 1.6s ease-in infinite;
+}
+.hw-drop--1 { left: 2px;  width: 4px; height: 9px;  animation-delay: 0s;    animation-duration: 1.5s; }
+.hw-drop--2 { left: 10px; width: 3px; height: 7px;  animation-delay: 0.55s; animation-duration: 1.9s; }
+.hw-drop--3 { left: 5px;  width: 5px; height: 11px; animation-delay: 1.1s;  animation-duration: 1.7s; }
+@keyframes hw-drip {
+  0%   { opacity: 0;   transform: translateY(0) scaleX(1); }
+  12%  { opacity: 0.9; }
+  75%  { opacity: 0.6; transform: translateY(44px) scaleX(0.65); }
+  100% { opacity: 0;   transform: translateY(58px) scaleX(0.3); }
+}
+
+/* Countdown ring (speed reflex mode) */
+.hw-cd-wrap {
+  position: absolute;
+  top: -30px;
+  left: -30px;
+  width: 60px;
+  height: 60px;
+  pointer-events: none;
+}
+.hw-cd-svg { width: 100%; height: 100%; }
+.hw-cd-txt {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 13px;
+  font-weight: bold;
+  color: #00ffcc;
+  font-family: 'Arial Black', sans-serif;
+  pointer-events: none;
+}
+
+/* Wound label */
+.hw-label {
+  position: absolute;
+  top: 24px;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: rgba(255,160,160,0.7);
+  white-space: nowrap;
+  text-align: center;
+}
+.hw-wound-wrap--sealed .hw-label { color: #00ff88; }
+
 /* ── Burn game ───────────────────────────────────────────────────────────── */
 .burn-zone {
   flex: 1;
@@ -1034,6 +1195,215 @@
 .ch-icon { font-size: 40px; }
 .ch-lbl  { font-size: 12px; letter-spacing: 2px; }
 .ch-sub  { font-size: 9px;  color: rgba(255,255,255,0.3); letter-spacing: 1px; text-align: center; }
+
+/* ── PLS 3D mode selector ────────────────────────────────────────────────── */
+.pls3d-mode-sel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.88);
+  pointer-events: all;
+}
+
+.pls3d-mode-title {
+  font-family: 'Arial Black', sans-serif;
+  font-size: clamp(20px, 4vw, 34px);
+  letter-spacing: 4px;
+  color: var(--cyan);
+  text-transform: uppercase;
+}
+
+.pls3d-mode-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 1px;
+}
+
+.pls3d-mode-btns {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pls3d-mode-btn {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  color: #fff;
+  font-family: var(--font);
+  padding: 18px 22px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 145px;
+  transition: all 0.2s;
+  pointer-events: all;
+}
+.pls3d-mode-btn:hover {
+  border-color: var(--cyan);
+  background: rgba(0, 255, 204, 0.1);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 255, 204, 0.15);
+}
+.pls3d-mode-btn--hot { border-color: rgba(255, 170, 0, 0.4); color: #ffaa00; }
+.pls3d-mode-btn--hot:hover { border-color: #ffaa00; background: rgba(255, 170, 0, 0.08); }
+
+.pls3d-mode-btn__icon  { font-size: 30px; }
+.pls3d-mode-btn__label { font-size: 11px; letter-spacing: 3px; font-weight: bold; }
+.pls3d-mode-btn__sub   { font-size: 9px; color: rgba(255, 255, 255, 0.3); letter-spacing: 1px; text-align: center; }
+
+/* ── PLS 3D game HUD — full-screen canvas + overlay bars ────────────────── */
+.pls3d-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Canvas fills the entire game area; mannequin is drawn centered inside */
+#pls3d-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Top overlay: timer | title | step-timer */
+.pls3d-overlay-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 14px 20px;
+  background: linear-gradient(rgba(0,0,0,0.65) 0%, transparent 100%);
+  z-index: 2;
+}
+
+.pls3d-htitle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.pls3d-mode-tag {
+  font-size: 9px;
+  letter-spacing: 2px;
+  background: rgba(0, 255, 204, 0.1);
+  border: 1px solid rgba(0, 255, 204, 0.28);
+  border-radius: 3px;
+  padding: 3px 8px;
+  color: var(--cyan);
+}
+
+.pls3d-steptimer {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+/* Bottom overlay: pills + HP + hint + progress */
+.pls3d-overlay-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 20px 18px;
+  background: linear-gradient(transparent 0%, rgba(0,0,0,0.75) 40%);
+  z-index: 2;
+}
+
+/* Horizontal step pills */
+.pls3d-pills {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.pls3d-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 7px 12px;
+  transition: all 0.3s;
+  min-width: 0;
+}
+
+.pls3d-pill--active {
+  border-color: var(--cyan);
+  background: rgba(0, 255, 204, 0.1);
+  box-shadow: 0 0 16px rgba(0, 255, 204, 0.15);
+}
+
+.pls3d-pill--done {
+  border-color: rgba(0, 255, 204, 0.2);
+  opacity: 0.55;
+}
+
+.pls3d-pill--fail {
+  border-color: rgba(255, 34, 68, 0.35);
+  background: rgba(255, 34, 68, 0.06);
+  opacity: 0.7;
+}
+
+.pls3d-pill__badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+.pls3d-pill--active .pls3d-pill__badge { background: var(--cyan); color: #000; }
+.pls3d-pill--done   .pls3d-pill__badge { background: rgba(0,255,204,0.25); color: var(--cyan); }
+.pls3d-pill--fail   .pls3d-pill__badge { color: #ff2244; }
+
+.pls3d-pill__icon  { font-size: 16px; }
+.pls3d-pill__label { font-size: 10px; letter-spacing: 0.5px; color: rgba(255,255,255,0.75); white-space: nowrap; }
+.pls3d-pill--done .pls3d-pill__label  { color: rgba(255,255,255,0.4); }
+
+/* Hide labels on inactive pills on small screens */
+@media (max-width: 600px) {
+  .pls3d-pill:not(.pls3d-pill--active) .pls3d-pill__label { display: none; }
+}
+
+.pls3d-victim-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pls3d-hint {
+  background: rgba(255, 170, 0, 0.1);
+  border: 1px solid rgba(255, 170, 0, 0.3);
+  border-radius: 4px;
+  padding: 9px 14px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #ffaa00;
+  text-align: center;
+}
 
 /* ── Animations ──────────────────────────────────────────────────────────── */
 @keyframes fadeUp {
