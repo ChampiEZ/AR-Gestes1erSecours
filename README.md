@@ -11,8 +11,7 @@ Application web éducative qui apprend les **gestes de premiers secours** à tra
 | 1 | Arrêt cardiaque | Compressions thoraciques (100–120 BPM) |
 | 2 | Personne inconsciente | Position Latérale de Sécurité (PLS) |
 | 3 | Brûlure | Refroidissement 15 min |
-| 4 | Saignement | Compression directe |
-| 5 | Étouffement | Manœuvre de Heimlich |
+| 4 | Situations multiples | Quiz sur plusieurs règles basiques de sécurité|
 
 Chaque mission comporte une **phase d'apprentissage** (slides illustrés) puis une **phase de jeu** où la webcam analyse tes gestes en temps réel via [MediaPipe Hands](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker).
 
