@@ -30,7 +30,7 @@ const MISSIONS = [
       { icon: '👂', title: 'Vérifier la respiration',   body: 'Incline la tête en arrière. Regarde, écoute et sens pendant 10 secondes. Si elle respire → PLS.' },
       { icon: '🤕', title: 'Mettre en PLS',             body: 'Plie son bras et sa jambe côté toi, puis roule-la doucement sur le côté. La bouche doit pointer vers le sol.' },
     ],
-    game: { type: 'pls', steps: 3, duration: 40 },
+    game: { type: 'pls', steps: 5, duration: 50 },
     tips: [
       'La PLS est uniquement pour les inconscients qui respirent',
       'En cas de suspicion de traumatisme cervical, ne pas bouger la victime',

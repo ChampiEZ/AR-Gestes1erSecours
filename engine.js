@@ -298,30 +298,87 @@ class CardiacGame {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GAME 2 — PLS (position latérale de sécurité, 3 gestes guidés)
+// GAME 2 — PLS (position latérale de sécurité, 5 gestes + vie victime)
 // ═══════════════════════════════════════════════════════════════════════════
 
 class PLSGame {
   constructor(cfg, ui) {
-    this.cfg      = cfg;
-    this.ui       = ui;
-    this.step     = 0;
-    this.stepDone = [false, false, false];
-    this.stepStart = null;
-    this._timer   = null;
-    this.timeLeft = cfg.duration;
+    this.cfg        = cfg;
+    this.ui         = ui;
+    this.step       = 0;
+    this.steps5     = this._buildSteps();
+    this.stepDone   = new Array(5).fill(false);
+    this.stepStart  = null;
+    this._timer     = null;
+    this._stepTick  = null;
+    this.timeLeft   = cfg.duration;
+    this.stepTL     = 0;
+    this.victimHP   = 100;
+    this.combo      = 0;
+    this.sweepPhase = 0;
   }
 
-  get steps() {
+  _buildSteps() {
     return [
-      { label: 'Incliner la tête', icon: '↪️', hint: 'Fais glisser ta main vers la DROITE', check: lm => Tracker.wrist(lm)?.x > 0.7 },
-      { label: 'Plier la jambe',   icon: '🦵', hint: 'Fais descendre ta main vers le BAS',  check: lm => Tracker.wrist(lm)?.y > 0.75 },
-      { label: 'Retourner la victime', icon: '🔄', hint: 'Fais glisser ta main vers la GAUCHE', check: lm => Tracker.wrist(lm)?.x < 0.3 },
+      {
+        label: 'Vérifier la respiration',
+        icon: '👁️',
+        hint: 'Main ouverte en HAUT au centre — 1 seconde',
+        timeLimit: 9,
+        holdMs: 900,
+        check: lm => {
+          const w = Tracker.wrist(lm);
+          return Tracker.isOpen(lm) && w && w.x > 0.28 && w.x < 0.72 && w.y < 0.38;
+        },
+      },
+      {
+        label: 'Basculer la tête en arrière',
+        icon: '↗️',
+        hint: 'Glisse ta main vers la DROITE',
+        timeLimit: 7,
+        holdMs: 800,
+        check: lm => {
+          const w = Tracker.wrist(lm);
+          return w && w.x > 0.73;
+        },
+      },
+      {
+        label: 'Avancer le bras côté toi',
+        icon: '✊',
+        hint: 'Poing FERMÉ à GAUCHE — attrape le bras !',
+        timeLimit: 8,
+        holdMs: 1000,
+        check: lm => {
+          const w = Tracker.wrist(lm);
+          return Tracker.isClosed(lm) && w && w.x < 0.25;
+        },
+      },
+      {
+        label: 'Plier le genou',
+        icon: '🦵',
+        hint: 'Descends ta main tout en BAS',
+        timeLimit: 7,
+        holdMs: 800,
+        check: lm => {
+          const w = Tracker.wrist(lm);
+          return w && w.y > 0.78;
+        },
+      },
+      {
+        label: 'Basculer sur le côté',
+        icon: '🔄',
+        hint: 'Balaye de DROITE vers GAUCHE — vite !',
+        timeLimit: 10,
+        holdMs: 0,
+        special: 'sweep',
+        check: () => false,
+      },
     ];
   }
 
   start() {
     this._render();
+    this._startStepTimer();
     this._timer = setInterval(() => {
       this.timeLeft--;
       const el = document.getElementById('g-pls-time');
@@ -330,27 +387,95 @@ class PLSGame {
     }, 1000);
   }
 
+  _startStepTimer() {
+    clearInterval(this._stepTick);
+    const s = this.steps5[this.step];
+    if (!s) return;
+    this.stepTL = s.timeLimit;
+    this._updateStepTimer();
+
+    this._stepTick = setInterval(() => {
+      this.stepTL--;
+      this._updateStepTimer();
+      if (this.stepTL <= 0) {
+        this.victimHP = Math.max(0, this.victimHP - 25);
+        this.combo = 0;
+        clearInterval(this._stepTick);
+        this._flashDanger();
+        if (this.step < 4) {
+          this.step++;
+          this.sweepPhase = 0;
+          this._render();
+          this._startStepTimer();
+        } else {
+          this._finish();
+        }
+      }
+    }, 1000);
+  }
+
+  _updateStepTimer() {
+    const el = document.getElementById('g-step-timer');
+    if (!el) return;
+    el.textContent = this.stepTL;
+    const danger = this.stepTL <= 3;
+    el.style.color = danger ? '#ff2244' : '#ffaa00';
+    el.classList.toggle('pls-step-tick--danger', danger);
+  }
+
+  _flashDanger() {
+    const el = document.getElementById('g-pls-danger');
+    if (!el) return;
+    el.classList.add('pls-danger--show');
+    setTimeout(() => el?.classList.remove('pls-danger--show'), 900);
+  }
+
   _render() {
+    const steps = this.steps5;
+    const s = steps[this.step];
+    const hpColor = this.victimHP > 60 ? '#00ffcc' : this.victimHP > 30 ? '#ffaa00' : '#ff2244';
+
     this.ui.innerHTML = `
-      <div class="game-hud">
+      <div class="game-hud pls-hud">
         <div class="gh-top">
           <div class="gh-timer"><span id="g-pls-time">${this.timeLeft}</span><span class="gh-unit">s</span></div>
           <div class="gh-title">POSITION DE SÉCURITÉ</div>
-          <div></div>
+          <div class="pls-steptimer-wrap">
+            <span id="g-step-timer" class="pls-step-tick">${s.timeLimit}</span>
+            <span class="gh-unit">/étape</span>
+          </div>
         </div>
+
+        <div class="pls-victim-bar">
+          <span class="pls-victim-lbl">❤️ VIE VICTIME</span>
+          <div class="pls-victim-bg">
+            <div class="pls-victim-fill" id="g-victim-fill"
+              style="width:${this.victimHP}%; background:${hpColor}; box-shadow: 0 0 8px ${hpColor}88"></div>
+          </div>
+          <span class="pls-victim-val" id="g-victim-val" style="color:${hpColor}">${this.victimHP}%</span>
+        </div>
+
+        <div id="g-pls-danger" class="pls-danger">⚠️ TROP LENT — ELLE SUFFOQUE !</div>
 
         <div class="pls-steps">
-          ${this.steps.map((s, i) => `
-            <div class="pls-step ${i === this.step ? 'pls-step--active' : ''} ${this.stepDone[i] ? 'pls-step--done' : ''}">
+          ${steps.map((st, i) => {
+            const active = i === this.step;
+            const done   = this.stepDone[i];
+            const failed = i < this.step && !done;
+            return `
+            <div class="pls-step ${active ? 'pls-step--active' : ''} ${done ? 'pls-step--done' : ''} ${failed ? 'pls-step--failed' : ''}">
               <span class="pls-step__num">${i + 1}</span>
-              <span class="pls-step__icon">${s.icon}</span>
-              <span class="pls-step__label">${s.label}</span>
-              ${this.stepDone[i] ? '<span class="pls-step__check">✓</span>' : ''}
-            </div>
-          `).join('')}
+              <span class="pls-step__icon">${st.icon}</span>
+              <span class="pls-step__label">${st.label}</span>
+              ${done   ? '<span class="pls-step__check">✓</span>'                     : ''}
+              ${failed ? '<span class="pls-step__check pls-step__check--fail">✗</span>' : ''}
+            </div>`;
+          }).join('')}
         </div>
 
-        <div class="pls-hint" id="g-pls-hint">${this.steps[this.step].hint}</div>
+        <div class="pls-hint" id="g-pls-hint">${s.hint}</div>
+
+        ${this.combo >= 2 ? `<div class="pls-combo">⚡ COMBO ×${this.combo} !</div>` : '<div class="pls-combo pls-combo--hidden"></div>'}
 
         <div class="pls-progress">
           <div class="pls-prog-bar" id="g-pls-bar" style="width: 0%"></div>
@@ -361,25 +486,36 @@ class PLSGame {
 
   onHand(hands) {
     const lm = hands[0];
-    if (!lm || this.stepDone[this.step]) return;
+    const s  = this.steps5[this.step];
+    if (!s || this.stepDone[this.step]) return;
 
-    const step = this.steps[this.step];
-    if (step.check(lm)) {
+    if (s.special === 'sweep') {
+      if (!lm) { this.sweepPhase = 0; return; }
+      const w = Tracker.wrist(lm);
+      if (!w) return;
+      const hint = document.getElementById('g-pls-hint');
+      if (this.sweepPhase === 0 && w.x > 0.65) {
+        this.sweepPhase = 1;
+        if (hint) hint.textContent = '👍 Maintenant balaye vers la GAUCHE !';
+      } else if (this.sweepPhase === 1 && w.x < 0.28) {
+        this._completeStep();
+      }
+      return;
+    }
+
+    if (!lm) {
+      this.stepStart = null;
+      const bar = document.getElementById('g-pls-bar');
+      if (bar) bar.style.width = '0%';
+      return;
+    }
+
+    if (s.check(lm)) {
       if (!this.stepStart) this.stepStart = Date.now();
-      const pct = Math.min(100, ((Date.now() - this.stepStart) / 1200) * 100);
+      const pct = Math.min(100, ((Date.now() - this.stepStart) / s.holdMs) * 100);
       const bar = document.getElementById('g-pls-bar');
       if (bar) bar.style.width = pct + '%';
-
-      if (pct >= 100) {
-        this.stepDone[this.step] = true;
-        this.stepStart = null;
-        if (this.step < 2) {
-          this.step++;
-          this._render();
-        } else {
-          this._finish();
-        }
-      }
+      if (pct >= 100) this._completeStep();
     } else {
       this.stepStart = null;
       const bar = document.getElementById('g-pls-bar');
@@ -387,16 +523,38 @@ class PLSGame {
     }
   }
 
+  _completeStep() {
+    if (this.stepDone[this.step]) return;
+    this.stepDone[this.step] = true;
+    this.stepStart  = null;
+    this.sweepPhase = 0;
+    this.combo++;
+    clearInterval(this._stepTick);
+    if (this.stepTL >= 5) this.victimHP = Math.min(100, this.victimHP + 5);
+
+    const next = this.step + 1;
+    if (next < this.steps5.length) {
+      this.step = next;
+      this._render();
+      this._startStepTimer();
+    } else {
+      this._finish();
+    }
+  }
+
   _finish() {
     clearInterval(this._timer);
-    const done  = this.stepDone.filter(Boolean).length;
-    const stars = done === 3 ? 3 : done === 2 ? 2 : done >= 1 ? 1 : 0;
+    clearInterval(this._stepTick);
+    const done     = this.stepDone.filter(Boolean).length;
     const timeUsed = this.cfg.duration - this.timeLeft;
+    const stars    = (done === 5 && this.victimHP > 60) ? 3
+                   : done === 5                          ? 2
+                   : done >= 3                           ? 1 : 0;
 
     Engine.end(stars, [
-      { val: `${done}/3`, lbl: 'Étapes réussies' },
-      { val: timeUsed + 's', lbl: 'Temps utilisé' },
-      { val: stars === 3 ? 'Excellent !' : 'À retravailler', lbl: 'Résultat' },
+      { val: `${done}/5`,           lbl: 'Étapes réussies' },
+      { val: this.victimHP + '%',   lbl: 'Vie victime' },
+      { val: timeUsed + 's',        lbl: 'Temps utilisé' },
     ]);
   }
 }
@@ -646,24 +804,27 @@ class BurnGame {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GAME 5 — Mixed (quiz gestuel rapide)
+// GAME 5 — Mixed (quiz gestuel — 4 grandes zones, main devant la réponse)
 // ═══════════════════════════════════════════════════════════════════════════
 
 class MixedGame {
   constructor(cfg, ui) {
-    this.cfg      = cfg;
-    this.ui       = ui;
-    this.round    = 0;
-    this.correct  = 0;
-    this.timeLeft = cfg.duration;
-    this._timer   = null;
+    this.cfg         = cfg;
+    this.ui          = ui;
+    this.round       = 0;
+    this.correct     = 0;
+    this.timeLeft    = cfg.duration;
+    this._timer      = null;
+    this._answered   = false;
+    this._dwellZone  = null;
+    this._dwellStart = null;
 
     this.questions = [
-      { q: 'Pas de respiration → tu fais quoi ?', answers: ['Massage cardiaque', 'PLS', 'Attendre'], correct: 0, gesture: 'fist' },
-      { q: 'Inconscient mais respire → tu fais quoi ?', answers: ['PLS', 'Massage cardiaque', 'Eau à boire'], correct: 0, gesture: 'open' },
-      { q: 'Hémorragie → tu fais quoi ?', answers: ['Comprimer', 'Surélever sans toucher', 'Mettre de l\'eau'], correct: 0, gesture: 'peace' },
-      { q: 'Brûlure → première action ?', answers: ['Eau fraîche 15 min', 'Beurre sur la plaie', 'Bandage serré'], correct: 0, gesture: 'point' },
-      { q: 'Appel d\'urgence → quel numéro ?', answers: ['15 ou 112', '17', '18 uniquement'], correct: 0, gesture: 'open' },
+      { q: 'Pas de respiration → tu fais quoi ?',       answers: ['Massage cardiaque', 'Mettre en PLS',        'Attendre les secours',  'Appeler un ami'],      correct: 0 },
+      { q: 'Inconscient mais respire → tu fais quoi ?', answers: ['Position PLS',      'Massage cardiaque',    'Lui donner de l\'eau',  'Ne rien faire'],       correct: 0 },
+      { q: 'Hémorragie → tu fais quoi ?',               answers: ['Comprimer fort',    'Surélever sans toucher','Rincer à l\'eau',       'Retirer l\'objet'],    correct: 0 },
+      { q: 'Brûlure → première action ?',               answers: ['Eau fraîche 15 min','Beurre sur la plaie',  'Bandage serré',         'Percer la cloque'],    correct: 0 },
+      { q: 'Appel d\'urgence → quel numéro ?',          answers: ['15 ou 112',         '17 (police)',          '18 uniquement',         '999 international'],   correct: 0 },
     ].slice(0, cfg.rounds);
   }
 
@@ -677,46 +838,117 @@ class MixedGame {
     }, 1000);
   }
 
+  // Map palm landmark position to visual quadrant (0=TL, 1=TR, 2=BL, 3=BR)
+  // The AR canvas is CSS-mirrored (scaleX(-1)), so landmark x is flipped visually.
+  _zoneFor(x, y) {
+    const col = x > 0.5 ? 0 : 1; // landmark x>0.5 → visual left col
+    const row = y < 0.5 ? 0 : 1;
+    return row * 2 + col;
+  }
+
   _renderQuestion() {
     const q = this.questions[this.round];
+    this._answered   = false;
+    this._dwellZone  = null;
+    this._dwellStart = null;
+
+    // Shuffle answers, keep track of where the correct one lands
+    const indices = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+    const shuffled = indices.map(i => q.answers[i]);
+    this._correctShuffled = indices.indexOf(q.correct);
+
     this.ui.innerHTML = `
-      <div class="game-hud">
-        <div class="gh-top">
+      <div class="quiz-ar-hud">
+        <div class="quiz-ar-top">
           <div class="gh-timer"><span id="g-m-time">${this.timeLeft}</span><span class="gh-unit">s</span></div>
-          <div class="gh-title">QUIZ SITUATIONS</div>
+          <div class="quiz-ar-title">QUIZ SITUATIONS</div>
           <div class="gh-comps">${this.round + 1}/${this.questions.length}</div>
         </div>
 
-        <div class="quiz-q">${q.q}</div>
-        <div class="quiz-answers">
-          ${q.answers.map((a, i) => `
-            <button class="quiz-btn" data-i="${i}">${a}</button>
+        <div class="quiz-ar-question">${q.q}</div>
+
+        <div class="quiz-ar-grid">
+          ${shuffled.map((a, i) => `
+            <div class="quiz-ar-cell" id="qc-${i}" data-i="${i}">
+              <div class="quiz-ar-cell__dwell" id="qdw-${i}"></div>
+              <div class="quiz-ar-cell__label">${a}</div>
+            </div>
           `).join('')}
         </div>
+
+        <div class="quiz-ar-hint">✋ Garde ta main dans la bonne zone 1.5s — ou clique</div>
       </div>
     `;
 
-    this.ui.querySelectorAll('.quiz-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const chosen = +btn.dataset.i;
-        if (chosen === q.correct) {
-          this.correct++;
-          btn.classList.add('quiz-btn--right');
-        } else {
-          btn.classList.add('quiz-btn--wrong');
-          this.ui.querySelectorAll('.quiz-btn')[q.correct].classList.add('quiz-btn--right');
-        }
-        this.ui.querySelectorAll('.quiz-btn').forEach(b => b.disabled = true);
-        setTimeout(() => {
-          this.round++;
-          if (this.round < this.questions.length) this._renderQuestion();
-          else this._finish();
-        }, 1200);
+    this.ui.querySelectorAll('.quiz-ar-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        if (!this._answered) this._select(+cell.dataset.i);
       });
     });
   }
 
-  onHand() {} // No hand tracking for mixed mode
+  onHand(hands) {
+    if (this._answered) return;
+    const lm = hands[0];
+
+    if (!lm) {
+      this._dwellZone  = null;
+      this._dwellStart = null;
+      this._clearHighlight();
+      return;
+    }
+
+    const p = Tracker.palm(lm);
+    if (!p) return;
+
+    const zone = this._zoneFor(p.x, p.y);
+    const now  = Date.now();
+    const DWELL_MS = 1500;
+
+    if (zone !== this._dwellZone) {
+      this._dwellZone  = zone;
+      this._dwellStart = now;
+      this._clearHighlight();
+    }
+
+    const pct = Math.min(100, ((now - this._dwellStart) / DWELL_MS) * 100);
+
+    document.querySelectorAll('.quiz-ar-cell').forEach((c, i) => {
+      c.classList.toggle('quiz-ar-cell--active', i === zone);
+    });
+
+    const dwEl = document.getElementById(`qdw-${zone}`);
+    if (dwEl) dwEl.style.setProperty('--dwell-pct', pct + '%');
+
+    if (pct >= 100) this._select(zone);
+  }
+
+  _clearHighlight() {
+    document.querySelectorAll('.quiz-ar-cell--active').forEach(c => c.classList.remove('quiz-ar-cell--active'));
+    for (let i = 0; i < 4; i++) {
+      const dw = document.getElementById(`qdw-${i}`);
+      if (dw) dw.style.setProperty('--dwell-pct', '0%');
+    }
+  }
+
+  _select(idx) {
+    if (this._answered) return;
+    this._answered = true;
+
+    if (idx === this._correctShuffled) {
+      this.correct++;
+      document.getElementById(`qc-${idx}`)?.classList.add('quiz-ar-cell--right');
+    } else {
+      document.getElementById(`qc-${idx}`)?.classList.add('quiz-ar-cell--wrong');
+      document.getElementById(`qc-${this._correctShuffled}`)?.classList.add('quiz-ar-cell--right');
+    }
+
+    setTimeout(() => {
+      this.round++;
+      if (this.round < this.questions.length) this._renderQuestion();
+      else this._finish();
+    }, 1500);
+  }
 
   _finish() {
     clearInterval(this._timer);
@@ -736,14 +968,17 @@ class MixedGame {
 // ═══════════════════════════════════════════════════════════════════════════
 
 document.getElementById('screen-quiz').addEventListener('screenenter', () => {
+  document.getElementById('ar-layer').classList.remove('hidden');
   const ui = document.getElementById('quiz-content');
   const m = { game: { type: 'mixed', rounds: 5, duration: 90 }, id: 'quiz', num: 0, title: 'Quiz global',
                tips: ['Révisez les gestes régulièrement !'], intro: {}, learn: [] };
   App.currentMission = m;
   ui.innerHTML = '<div id="game-ui"></div>';
-  const game = new MixedGame(m.game, document.getElementById('game-ui'));
-  Engine._game = game;
-  game.start();
+  Tracker.start().then(() => {
+    const game = new MixedGame(m.game, document.getElementById('game-ui'));
+    Engine._game = game;
+    game.start();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

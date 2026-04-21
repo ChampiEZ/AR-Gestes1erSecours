@@ -604,6 +604,78 @@
   box-shadow: 0 0 8px var(--cyan);
 }
 
+/* ── PLS extended styles ─────────────────────────────────────────────────── */
+.pls-hud { gap: 8px; }
+
+.pls-steptimer-wrap { display: flex; align-items: baseline; gap: 3px; }
+.pls-step-tick {
+  font-size: 22px;
+  font-weight: bold;
+  color: #ffaa00;
+  transition: color 0.3s;
+}
+@keyframes pls-danger-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.6; transform: scale(1.15); }
+}
+.pls-step-tick--danger {
+  animation: pls-danger-pulse 0.4s ease-in-out infinite;
+}
+
+.pls-victim-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pls-victim-lbl { font-size: 10px; letter-spacing: 2px; white-space: nowrap; }
+.pls-victim-bg {
+  flex: 1;
+  height: 8px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.pls-victim-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s, background 0.5s;
+}
+.pls-victim-val { font-size: 11px; font-weight: bold; min-width: 36px; text-align: right; }
+
+.pls-danger {
+  text-align: center;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #ff2244;
+  font-weight: bold;
+  padding: 6px;
+  border: 1px solid #ff224466;
+  border-radius: 4px;
+  background: rgba(255,34,68,0.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.pls-danger--show { opacity: 1; }
+
+.pls-step--failed {
+  border-color: rgba(255,34,68,0.35) !important;
+  background: rgba(255,34,68,0.06) !important;
+  opacity: 0.7;
+}
+.pls-step__check--fail { color: #ff2244 !important; }
+
+.pls-combo {
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: #ffdd00;
+  text-shadow: 0 0 10px #ffdd0088;
+  font-weight: bold;
+  height: 20px;
+}
+.pls-combo--hidden { visibility: hidden; }
+
 /* ── Hemorrhage game ─────────────────────────────────────────────────────── */
 .hem-zone {
   flex: 1;
@@ -716,41 +788,129 @@
   text-align: center;
 }
 
-/* ── Quiz game ───────────────────────────────────────────────────────────── */
-.quiz-q {
-  background: rgba(0,0,0,0.6);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 24px;
-  font-size: clamp(14px, 2vw, 18px);
-  line-height: 1.6;
-  color: #fff;
-  margin-bottom: 16px;
-  text-align: center;
+/* ── Quiz AR screen overlay ──────────────────────────────────────────────── */
+#screen-quiz {
+  background: transparent;
+  z-index: 1;
 }
 
-.quiz-answers {
+#quiz-content,
+#screen-quiz #game-ui {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── Quiz AR game — 2×2 fullscreen grid ─────────────────────────────────── */
+.quiz-ar-hud {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  pointer-events: none;
 }
 
-.quiz-btn {
-  background: var(--glass);
-  border: 1px solid var(--border);
-  color: rgba(255,255,255,0.8);
-  font-family: var(--font);
-  font-size: 13px;
-  padding: 14px 20px;
-  cursor: pointer;
-  border-radius: 4px;
-  text-align: left;
-  transition: all 0.2s;
+.quiz-ar-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 20px;
+  background: rgba(0,0,0,0.6);
+  border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.quiz-ar-title {
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: rgba(255,255,255,0.5);
+  padding-top: 10px;
+}
+
+.quiz-ar-question {
+  background: rgba(0,0,0,0.75);
+  border-bottom: 2px solid var(--border);
+  padding: 20px 40px;
+  font-size: clamp(16px, 2.5vw, 24px);
+  line-height: 1.4;
+  color: #fff;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+.quiz-ar-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
   pointer-events: all;
 }
-.quiz-btn:hover:not(:disabled) { background: rgba(0,255,204,0.1); border-color: var(--cyan); }
-.quiz-btn--right { background: rgba(0,255,100,0.15); border-color: #00ff88; color: #00ff88; }
-.quiz-btn--wrong { background: rgba(255,68,68,0.15); border-color: #ff4444; color: #ff4444; }
+
+.quiz-ar-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0,255,204,0.12);
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 0.25s, border-color 0.25s;
+  background: rgba(0,0,0,0.5);
+}
+
+.quiz-ar-cell:nth-child(1) { border-top: none; border-left: none; }
+.quiz-ar-cell:nth-child(2) { border-top: none; border-right: none; }
+.quiz-ar-cell:nth-child(3) { border-bottom: none; border-left: none; }
+.quiz-ar-cell:nth-child(4) { border-bottom: none; border-right: none; }
+
+.quiz-ar-cell--active {
+  background: rgba(0,255,204,0.10);
+  border-color: var(--cyan) !important;
+  box-shadow: inset 0 0 40px rgba(0,255,204,0.08);
+}
+
+.quiz-ar-cell--right {
+  background: rgba(0,255,100,0.20) !important;
+  border-color: #00ff88 !important;
+}
+
+.quiz-ar-cell--wrong {
+  background: rgba(255,68,68,0.20) !important;
+  border-color: #ff4444 !important;
+}
+
+.quiz-ar-cell__label {
+  position: relative;
+  z-index: 2;
+  font-size: clamp(20px, 3.5vw, 34px);
+  font-family: 'Arial Black', sans-serif;
+  color: rgba(255,255,255,0.92);
+  text-align: center;
+  padding: 32px;
+  line-height: 1.3;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+}
+
+/* Conic dwell fill — grows clockwise as hand holds position */
+.quiz-ar-cell__dwell {
+  --dwell-pct: 0%;
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    rgba(0,255,204,0.25) var(--dwell-pct),
+    transparent var(--dwell-pct)
+  );
+  pointer-events: none;
+}
+
+.quiz-ar-hint {
+  background: rgba(0,0,0,0.8);
+  border-top: 1px solid var(--border);
+  padding: 10px 24px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.4);
+  text-align: center;
+}
 
 /* ── Feedback screen ─────────────────────────────────────────────────────── */
 #screen-feedback {
